@@ -155,6 +155,11 @@ class JenkinsAPI: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
     
+    func fetchConsoleOutputByURL(buildURL: String) async throws -> String {
+        let data = try await fetchByURL(jobURL: buildURL, suffix: "consoleText", acceptJSON: false)
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+    
     // MARK: - Private Methods
     
     /// Parse query string into URLQueryItem array

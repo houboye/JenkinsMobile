@@ -1,6 +1,7 @@
 package com.by.android.ui.jobdetail
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,7 +66,8 @@ import com.by.android.ui.theme.AndroidTheme
 fun JobDetailScreen(
     job: Job,
     viewModel: JobDetailViewModel,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    onBuildClick: (Build) -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -201,7 +203,10 @@ fun JobDetailScreen(
                     }
                     else -> {
                         items(uiState.builds, key = { it.number }) { build ->
-                            BuildRow(build = build)
+                            BuildRow(
+                                build = build,
+                                onClick = { onBuildClick(build) }
+                            )
                             HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
                         }
                     }
@@ -353,11 +358,13 @@ fun StatCard(
 @Composable
 fun BuildRow(
     build: Build,
+    onClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .background(MaterialTheme.colorScheme.surface)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically

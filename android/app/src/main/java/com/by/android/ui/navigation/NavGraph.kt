@@ -13,6 +13,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.by.android.data.model.Job
 import com.by.android.data.repository.JenkinsRepository
+import com.by.android.ui.buildlog.BuildLogScreen
+import com.by.android.ui.buildlog.BuildLogViewModel
 import com.by.android.ui.dashboard.DashboardScreen
 import com.by.android.ui.dashboard.DashboardViewModel
 import com.by.android.ui.jobdetail.JobDetailScreen
@@ -30,6 +32,13 @@ sealed class Screen(val route: String) {
             val encodedUrl = java.net.URLEncoder.encode(job.url, "UTF-8")
             val color = job.color ?: "unknown"
             return "job_detail/$encodedName/$encodedUrl/$color"
+        }
+    }
+    object BuildLog : Screen("build_log/{jobName}/{buildNumber}/{buildUrl}") {
+        fun createRoute(jobName: String, buildNumber: Int, buildUrl: String): String {
+            val encodedName = java.net.URLEncoder.encode(jobName, "UTF-8")
+            val encodedUrl = java.net.URLEncoder.encode(buildUrl, "UTF-8")
+            return "build_log/$encodedName/$buildNumber/$encodedUrl"
         }
     }
     object Settings : Screen("settings")
@@ -113,6 +122,39 @@ fun JenkinsNavGraph(
             JobDetailScreen(
                 job = job,
                 viewModel = viewModel,
+                onBackClick = { navController.popBackStack() },
+                onBuildClick = { build ->
+                    navController.navigate(Screen.BuildLog.createRoute(jobName, build.number, build.url))
+                }
+            )
+        }
+        
+        composable(
+            route = Screen.BuildLog.route,
+            arguments = listOf(
+                navArgument("jobName") { type = NavType.StringType },
+                navArgument("buildNumber") { type = NavType.IntType },
+                navArgument("buildUrl") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val jobName = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("jobName") ?: "",
+                "UTF-8"
+            )
+            val buildNumber = backStackEntry.arguments?.getInt("buildNumber") ?: 0
+            val buildUrl = java.net.URLDecoder.decode(
+                backStackEntry.arguments?.getString("buildUrl") ?: "",
+                "UTF-8"
+            )
+            
+            val viewModel = remember(jobName, buildNumber) { 
+                BuildLogViewModel(repository, jobName, buildNumber, buildUrl) 
+            }
+            
+            BuildLogScreen(
+                jobName = jobName,
+                buildNumber = buildNumber,
+                viewModel = viewModel,
                 onBackClick = { navController.popBackStack() }
             )
         }
@@ -133,4 +175,3 @@ fun JenkinsNavGraph(
         }
     }
 }
-

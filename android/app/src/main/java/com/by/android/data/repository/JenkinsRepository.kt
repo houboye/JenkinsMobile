@@ -372,6 +372,34 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
+    /** Get console output by build URL */
+    suspend fun getConsoleOutputByUrl(buildUrl: String): ApiResult<String> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val server = currentServer ?: return@withContext ApiResult.Error("未配置服务器")
+                val client = httpClient ?: return@withContext ApiResult.Error("未配置服务器")
+                
+                val fullUrl = buildJobApiUrl(jobUrl = buildUrl, suffix = "consoleText")
+                
+                val request = Request.Builder()
+                    .url(fullUrl)
+                    .get()
+                    .header("Authorization", server.authHeader)
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                
+                if (response.isSuccessful) {
+                    ApiResult.Success(response.body?.string() ?: "")
+                } else {
+                    handleError(response.code)
+                }
+            } catch (e: Exception) {
+                ApiResult.Error("网络错误: ${e.message}")
+            }
+        }
+    }
+    
     private fun <T> handleError(code: Int): ApiResult<T> {
         return when (code) {
             401, 403 -> ApiResult.Error("认证失败", code)

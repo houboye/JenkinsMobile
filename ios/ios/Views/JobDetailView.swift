@@ -10,6 +10,7 @@ import SwiftUI
 struct JobDetailView: View {
     let job: Job
     @StateObject private var viewModel: JobDetailViewModel
+    @State private var selectedBuild: Build?
     
     init(job: Job) {
         self.job = job
@@ -111,7 +112,12 @@ struct JobDetailView: View {
                     } else {
                         LazyVStack(spacing: 0) {
                             ForEach(viewModel.builds) { build in
-                                BuildRowView(build: build)
+                                Button {
+                                    selectedBuild = build
+                                } label: {
+                                    BuildRowView(build: build)
+                                }
+                                .buttonStyle(.plain)
                                 Divider()
                                     .padding(.leading, 56)
                             }
@@ -156,6 +162,13 @@ struct JobDetailView: View {
                     viewModel.triggerBuild(with: params)
                 },
                 onCancel: {}
+            )
+        }
+        .sheet(item: $selectedBuild) { build in
+            BuildLogView(
+                jobName: job.name,
+                buildNumber: build.number,
+                buildURL: build.url
             )
         }
         .task {
