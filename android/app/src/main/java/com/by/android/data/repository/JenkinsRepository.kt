@@ -10,15 +10,24 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.by.android.data.api.JenkinsApi
 import com.by.android.data.model.Build
+import com.by.android.data.model.CrumbResponse
 import com.by.android.data.model.JenkinsView
 import com.by.android.data.model.Job
 import com.by.android.data.model.JobDetailResponse
 import com.by.android.data.model.Server
+import com.google.gson.Gson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.FormBody
+import okhttp3.HttpUrl
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -34,8 +43,10 @@ sealed class ApiResult<out T> {
 class JenkinsRepository(private val context: Context) {
     
     private var api: JenkinsApi? = null
+    private var httpClient: OkHttpClient? = null
     private var currentServer: Server? = null
-    private var cachedCrumb: String? = null
+    private var cachedCrumb: CrumbResponse? = null
+    private val gson = Gson()
     
     companion object {
         private val SERVER_URL = stringPreferencesKey("server_url")
@@ -75,6 +86,7 @@ class JenkinsRepository(private val context: Context) {
             preferences[IS_LOGGED_IN] = false
         }
         api = null
+        httpClient = null
         currentServer = null
         cachedCrumb = null
     }
@@ -112,27 +124,49 @@ class JenkinsRepository(private val context: Context) {
         if (currentServer == server && api != null) return
         
         currentServer = server
-        cachedCrumb = null  // Clear crumb when server changes
+        cachedCrumb = null
         
+        // Cookie 存储 - Jenkins crumb 需要和 session 绑定
+        val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+        val cookieJar = object : CookieJar {
+            override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+                cookieStore.getOrPut(url.host) { mutableListOf() }.apply {
+                    // 移除同名 cookie，添加新的
+                    cookies.forEach { newCookie ->
+                        removeAll { it.name == newCookie.name }
+                        add(newCookie)
+                    }
+                }
+            }
+            
+            override fun loadForRequest(url: HttpUrl): List<Cookie> {
+                return cookieStore[url.host] ?: emptyList()
+            }
+        }
+        
+        // 统一使用一个带认证的 OkHttpClient
         val authInterceptor = Interceptor { chain ->
             val request = chain.request().newBuilder()
-                .addHeader("Authorization", server.authHeader)
-                .addHeader("Accept", "application/json")
+                .header("Authorization", server.authHeader)
+                .header("Accept", "application/json")
                 .build()
             chain.proceed(request)
         }
         
         val loggingInterceptor = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BASIC
+            level = HttpLoggingInterceptor.Level.BODY
         }
         
         val client = OkHttpClient.Builder()
+            .cookieJar(cookieJar)  // 添加 cookie 管理
             .addInterceptor(authInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .build()
+        
+        httpClient = client
         
         val retrofit = Retrofit.Builder()
             .baseUrl(server.baseUrl + "/")
@@ -185,22 +219,6 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
-    suspend fun getJobDetail(jobName: String): ApiResult<JobDetailResponse> {
-        return try {
-            val response = api?.getJobDetail(jobName)
-                ?: return ApiResult.Error("未配置服务器")
-            if (response.isSuccessful) {
-                response.body()?.let {
-                    ApiResult.Success(it)
-                } ?: ApiResult.Error("数据为空")
-            } else {
-                handleError(response.code())
-            }
-        } catch (e: Exception) {
-            ApiResult.Error("网络错误: ${e.message}")
-        }
-    }
-    
     suspend fun getJobDetailByUrl(jobUrl: String): ApiResult<JobDetailResponse> {
         return try {
             val fullUrl = buildJobApiUrl(
@@ -223,79 +241,119 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
-    suspend fun getBuild(jobName: String, buildNumber: Int): ApiResult<Build> {
-        return try {
-            val response = api?.getBuild(jobName, buildNumber)
-                ?: return ApiResult.Error("未配置服务器")
-            if (response.isSuccessful) {
-                response.body()?.let {
-                    ApiResult.Success(it)
-                } ?: ApiResult.Error("数据为空")
-            } else {
-                handleError(response.code())
-            }
-        } catch (e: Exception) {
-            ApiResult.Error("网络错误: ${e.message}")
-        }
-    }
-    
+    /**
+     * Trigger build using direct OkHttp call (matching iOS implementation)
+     */
     suspend fun triggerBuild(jobName: String, parameters: Map<String, String>? = null): ApiResult<Boolean> {
-        return try {
-            val crumb = getCrumb()
-            val response = if (parameters.isNullOrEmpty()) {
-                api?.triggerBuildSimple(jobName, crumb)
-            } else {
-                api?.triggerBuild(jobName, crumb, parameters)
-            } ?: return ApiResult.Error("未配置服务器")
-            
-            if (response.isSuccessful || response.code() == 201 || response.code() == 302) {
-                ApiResult.Success(true)
-            } else {
-                handleError(response.code())
-            }
-        } catch (e: Exception) {
-            ApiResult.Error("网络错误: ${e.message}")
-        }
+        val server = currentServer ?: return ApiResult.Error("未配置服务器")
+        val fullUrl = "${server.baseUrl}/job/${Uri.encode(jobName)}/buildWithParameters"
+        return executeTriggerBuild(fullUrl, parameters)
     }
     
+    /**
+     * Trigger build by URL using direct OkHttp call (matching iOS implementation)
+     */
     suspend fun triggerBuildByUrl(jobUrl: String, parameters: Map<String, String>? = null): ApiResult<Boolean> {
-        return try {
-            val fullUrl = buildJobApiUrl(jobUrl = jobUrl, suffix = "buildWithParameters")
-            val crumb = getCrumb()
-            
-            val response = if (parameters.isNullOrEmpty()) {
-                api?.triggerBuildByUrlSimple(fullUrl, crumb)
-            } else {
-                api?.triggerBuildByUrl(fullUrl, crumb, parameters)
-            } ?: return ApiResult.Error("未配置服务器")
-            
-            if (response.isSuccessful || response.code() == 201 || response.code() == 302) {
-                ApiResult.Success(true)
-            } else {
-                handleError(response.code())
+        val fullUrl = buildJobApiUrl(jobUrl = jobUrl, suffix = "buildWithParameters")
+        return executeTriggerBuild(fullUrl, parameters)
+    }
+    
+    /**
+     * Execute build trigger request (shared implementation)
+     */
+    private suspend fun executeTriggerBuild(url: String, parameters: Map<String, String>?): ApiResult<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val server = currentServer ?: return@withContext ApiResult.Error("未配置服务器")
+                val client = httpClient ?: return@withContext ApiResult.Error("未配置服务器")
+                
+                android.util.Log.d("JenkinsRepo", "=== triggerBuild ===")
+                android.util.Log.d("JenkinsRepo", "url: $url")
+                android.util.Log.d("JenkinsRepo", "authHeader: ${server.authHeader}")
+                
+                // 先获取 CSRF crumb
+                val crumb = fetchCrumbDirect()
+                
+                // 构建请求
+                val formBodyBuilder = FormBody.Builder()
+                parameters?.forEach { (key, value) ->
+                    formBodyBuilder.add(key, value)
+                }
+                
+                val requestBuilder = Request.Builder()
+                    .url(url)
+                    .post(formBodyBuilder.build())
+                    .header("Authorization", server.authHeader)  // 强制添加认证头
+                
+                // 添加 CSRF crumb
+                if (crumb != null) {
+                    android.util.Log.d("JenkinsRepo", "crumb: ${crumb.crumbRequestField}=${crumb.crumb}")
+                    requestBuilder.header(crumb.crumbRequestField, crumb.crumb)
+                } else {
+                    android.util.Log.w("JenkinsRepo", "No crumb available")
+                }
+                
+                val request = requestBuilder.build()
+                android.util.Log.d("JenkinsRepo", "Request headers: ${request.headers}")
+                
+                val response = client.newCall(request).execute()
+                val responseCode = response.code
+                val responseBody = response.body?.string()
+                
+                android.util.Log.d("JenkinsRepo", "responseCode: $responseCode")
+                android.util.Log.d("JenkinsRepo", "responseBody: ${responseBody?.take(500)}")
+                
+                when (responseCode) {
+                    in 200..299, 201, 302 -> ApiResult.Success(true)
+                    401, 403 -> ApiResult.Error("认证失败", responseCode)
+                    else -> ApiResult.Error("服务器错误: $responseCode", responseCode)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("JenkinsRepo", "triggerBuild error", e)
+                ApiResult.Error("网络错误: ${e.message}")
             }
-        } catch (e: Exception) {
-            ApiResult.Error("网络错误: ${e.message}")
         }
     }
     
     /**
-     * Fetch CSRF crumb token from Jenkins
+     * Fetch CSRF crumb using direct OkHttp call (bypassing Retrofit)
      */
-    private suspend fun getCrumb(): String? {
-        // Return cached crumb if available
+    private fun fetchCrumbDirect(): CrumbResponse? {
         cachedCrumb?.let { return it }
         
         return try {
-            val response = api?.getCrumb()
-            if (response?.isSuccessful == true) {
-                cachedCrumb = response.body()?.crumb
-                cachedCrumb
+            val server = currentServer ?: return null
+            val client = httpClient ?: return null
+            
+            val url = "${server.baseUrl}/crumbIssuer/api/json"
+            android.util.Log.d("JenkinsRepo", "Fetching crumb from: $url")
+            
+            val request = Request.Builder()
+                .url(url)
+                .get()
+                .header("Authorization", server.authHeader)  // 强制添加认证头
+                .header("Accept", "application/json")
+                .build()
+            
+            val response = client.newCall(request).execute()
+            android.util.Log.d("JenkinsRepo", "Crumb response code: ${response.code}")
+            
+            if (response.isSuccessful) {
+                val body = response.body?.string()
+                if (body != null) {
+                    val crumb = gson.fromJson(body, CrumbResponse::class.java)
+                    cachedCrumb = crumb
+                    android.util.Log.d("JenkinsRepo", "Got crumb: ${crumb.crumbRequestField}=${crumb.crumb.take(10)}...")
+                    crumb
+                } else {
+                    null
+                }
             } else {
+                android.util.Log.w("JenkinsRepo", "Crumb request failed: ${response.code}")
                 null
             }
         } catch (e: Exception) {
-            // Crumb might not be enabled on the server
+            android.util.Log.e("JenkinsRepo", "Crumb request exception", e)
             null
         }
     }
@@ -321,17 +379,10 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
-    /**
-     * Build URL using Uri.Builder for proper URL construction
-     * @param jobUrl Base job URL (e.g., http://host/view/xxx/job/yyy/)
-     * @param suffix Path suffix to append (e.g., "api/json" or "build")
-     * @param query Optional query string (e.g., "tree=name,url,...")
-     */
     private fun buildJobApiUrl(jobUrl: String, suffix: String, query: String? = null): String {
         val baseUri = Uri.parse(jobUrl)
         val builder = baseUri.buildUpon()
         
-        // Append path suffix
         var path = baseUri.path ?: ""
         if (!path.endsWith("/")) {
             path += "/"
@@ -339,7 +390,6 @@ class JenkinsRepository(private val context: Context) {
         path += suffix
         builder.path(path)
         
-        // Set encoded query to avoid double encoding of special characters like []
         if (query != null) {
             builder.encodedQuery(query)
         }
@@ -347,4 +397,3 @@ class JenkinsRepository(private val context: Context) {
         return builder.build().toString()
     }
 }
-
