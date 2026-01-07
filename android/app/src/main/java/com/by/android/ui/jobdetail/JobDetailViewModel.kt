@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.by.android.data.model.Build
 import com.by.android.data.model.JobDetailResponse
+import com.by.android.data.model.ParameterDefinition
 import com.by.android.data.repository.ApiResult
 import com.by.android.data.repository.JenkinsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,12 +19,21 @@ data class JobDetailUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
-    val triggerMessage: String? = null
-)
+    val triggerMessage: String? = null,
+    val showParametersDialog: Boolean = false
+) {
+    /** Check if this job has parameters */
+    val hasParameters: Boolean
+        get() = jobDetail?.hasParameters == true
+    
+    /** Get parameter definitions */
+    val parameters: List<ParameterDefinition>
+        get() = jobDetail?.parameterDefinitions ?: emptyList()
+}
 
 class JobDetailViewModel(
     private val repository: JenkinsRepository,
-    private val jobName: String,
+    val jobName: String,
     private val jobUrl: String
 ) : ViewModel() {
     
@@ -79,9 +89,29 @@ class JobDetailViewModel(
         }
     }
     
-    fun triggerBuild() {
+    /** Called when user taps the trigger build button */
+    fun onTriggerBuildTapped() {
+        if (_uiState.value.hasParameters) {
+            // Show parameters dialog
+            _uiState.update { it.copy(showParametersDialog = true) }
+        } else {
+            // No parameters, trigger directly
+            triggerBuild(null)
+        }
+    }
+    
+    /** Hide the parameters dialog */
+    fun hideParametersDialog() {
+        _uiState.update { it.copy(showParametersDialog = false) }
+    }
+    
+    /** Trigger build with optional parameters */
+    fun triggerBuild(parameters: Map<String, String>?) {
         viewModelScope.launch {
-            when (val result = repository.triggerBuildByUrl(jobUrl)) {
+            // Hide dialog first
+            _uiState.update { it.copy(showParametersDialog = false) }
+            
+            when (val result = repository.triggerBuildByUrl(jobUrl, parameters)) {
                 is ApiResult.Success -> {
                     _uiState.update { it.copy(triggerMessage = "已触发构建") }
                     kotlinx.coroutines.delay(1000)

@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import com.by.android.data.model.Build
 import com.by.android.data.model.Job
 import com.by.android.data.model.JobStatus
+import com.by.android.ui.components.BuildParametersDialog
 import com.by.android.ui.components.BuildStatusIcon
 import com.by.android.ui.components.StatusIcon
 import com.by.android.ui.theme.AndroidTheme
@@ -86,6 +87,16 @@ fun JobDetailScreen(
                     Text("确定")
                 }
             }
+        )
+    }
+    
+    // Show parameters dialog
+    if (uiState.showParametersDialog) {
+        BuildParametersDialog(
+            jobName = viewModel.jobName,
+            parameters = uiState.parameters,
+            onBuild = { params -> viewModel.triggerBuild(params) },
+            onDismiss = { viewModel.hideParametersDialog() }
         )
     }
     
@@ -133,7 +144,8 @@ fun JobDetailScreen(
                     JobHeader(
                         job = job,
                         description = uiState.jobDetail?.description,
-                        onTriggerBuild = { viewModel.triggerBuild() }
+                        hasParameters = uiState.hasParameters,
+                        onTriggerBuild = { viewModel.onTriggerBuildTapped() }
                     )
                 }
                 
@@ -203,6 +215,7 @@ fun JobDetailScreen(
 fun JobHeader(
     job: Job,
     description: String?,
+    hasParameters: Boolean,
     onTriggerBuild: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -299,7 +312,7 @@ fun JobHeader(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "触发构建",
+                    text = if (hasParameters) "配置参数并构建" else "触发构建",
                     fontWeight = FontWeight.SemiBold
                 )
             }

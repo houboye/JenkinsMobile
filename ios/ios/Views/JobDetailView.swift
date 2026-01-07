@@ -63,11 +63,11 @@ struct JobDetailView: View {
                     
                     // Trigger Build Button
                     Button {
-                        viewModel.triggerBuild()
+                        viewModel.onTriggerBuildTapped()
                     } label: {
                         HStack {
                             Image(systemName: "play.fill")
-                            Text("触发构建")
+                            Text(viewModel.hasParameters ? "配置参数并构建" : "触发构建")
                         }
                         .frame(maxWidth: .infinity)
                         .padding()
@@ -147,6 +147,16 @@ struct JobDetailView: View {
             Button("确定", role: .cancel) {}
         } message: {
             Text(viewModel.triggerMessage ?? "")
+        }
+        .sheet(isPresented: $viewModel.showParametersSheet) {
+            BuildParametersView(
+                jobName: job.name,
+                parameters: viewModel.parameters,
+                onBuild: { params in
+                    viewModel.triggerBuild(with: params)
+                },
+                onCancel: {}
+            )
         }
         .task {
             await viewModel.loadData()

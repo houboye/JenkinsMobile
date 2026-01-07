@@ -206,7 +206,7 @@ class JenkinsRepository(private val context: Context) {
             val fullUrl = buildJobApiUrl(
                 jobUrl = jobUrl,
                 suffix = "api/json",
-                query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
+                query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url],property[parameterDefinitions[name,type,description,defaultParameterValue[name,value],choices]]"
             )
             
             val response = api?.getJobDetailByUrl(fullUrl)

@@ -18,6 +18,7 @@ class JobDetailViewModel: ObservableObject {
     @Published var showError = false
     @Published var triggerMessage: String?
     @Published var showTriggerAlert = false
+    @Published var showParametersSheet = false
     
     private let api = JenkinsAPI.shared
     let jobName: String
@@ -26,6 +27,16 @@ class JobDetailViewModel: ObservableObject {
     init(jobName: String, jobURL: String) {
         self.jobName = jobName
         self.jobURL = jobURL
+    }
+    
+    /// Check if the job has parameters
+    var hasParameters: Bool {
+        jobDetail?.hasParameters ?? false
+    }
+    
+    /// Get parameter definitions
+    var parameters: [ParameterDefinition] {
+        jobDetail?.parameterDefinitions ?? []
     }
     
     func loadData() async {
@@ -62,10 +73,22 @@ class JobDetailViewModel: ObservableObject {
         isRefreshing = false
     }
     
-    func triggerBuild() {
+    /// Called when user taps the trigger build button
+    func onTriggerBuildTapped() {
+        if hasParameters {
+            // Show parameters sheet
+            showParametersSheet = true
+        } else {
+            // No parameters, trigger directly
+            triggerBuild(with: nil)
+        }
+    }
+    
+    /// Trigger build with optional parameters
+    func triggerBuild(with parameters: [String: String]?) {
         Task {
             do {
-                try await api.triggerBuildByURL(jobURL: jobURL)
+                try await api.triggerBuildByURL(jobURL: jobURL, parameters: parameters)
                 triggerMessage = "已触发构建"
                 showTriggerAlert = true
                 

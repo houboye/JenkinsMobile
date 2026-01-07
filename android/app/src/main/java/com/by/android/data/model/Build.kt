@@ -126,6 +126,56 @@ data class JobDetailResponse(
     val lastSuccessfulBuild: BuildReference? = null,
     val lastFailedBuild: BuildReference? = null,
     val description: String? = null,
-    val buildable: Boolean? = null
+    val buildable: Boolean? = null,
+    val property: List<JobProperty>? = null
+) {
+    /** Get parameter definitions from job properties */
+    val parameterDefinitions: List<ParameterDefinition>
+        get() = property?.flatMap { it.parameterDefinitions ?: emptyList() } ?: emptyList()
+    
+    /** Check if this job has parameters */
+    val hasParameters: Boolean
+        get() = parameterDefinitions.isNotEmpty()
+}
+
+// Parameter Models
+
+data class JobProperty(
+    val parameterDefinitions: List<ParameterDefinition>? = null
 )
+
+data class ParameterDefinition(
+    val name: String,
+    val type: String? = null,
+    val description: String? = null,
+    val defaultParameterValue: ParameterValue? = null,
+    val choices: List<String>? = null
+) {
+    /** Parameter type enum for easier handling */
+    val parameterType: ParameterType
+        get() = when {
+            type?.contains("Choice") == true || type?.contains("ExtendedChoice") == true -> ParameterType.CHOICE
+            type?.contains("Boolean") == true -> ParameterType.BOOLEAN
+            type?.contains("Text") == true -> ParameterType.TEXT
+            type?.contains("Password") == true -> ParameterType.PASSWORD
+            else -> ParameterType.STRING
+        }
+    
+    /** Default value as string */
+    val defaultValue: String
+        get() = defaultParameterValue?.value ?: ""
+}
+
+data class ParameterValue(
+    val name: String? = null,
+    val value: String? = null
+)
+
+enum class ParameterType {
+    STRING,
+    TEXT,
+    BOOLEAN,
+    CHOICE,
+    PASSWORD
+}
 

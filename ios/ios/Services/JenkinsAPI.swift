@@ -105,13 +105,13 @@ class JenkinsAPI: ObservableObject {
     func fetchJobDetail(jobName: String) async throws -> JobDetailResponse {
         let encodedName = jobName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobName
         let path = "job/\(encodedName)/api/json"
-        let query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
+        let query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url],property[parameterDefinitions[name,type,description,defaultParameterValue[name,value],choices]]"
         let data = try await fetch(path: path, query: query)
         return try decode(JobDetailResponse.self, from: data)
     }
     
     func fetchJobDetailByURL(jobURL: String) async throws -> JobDetailResponse {
-        let query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
+        let query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url],property[parameterDefinitions[name,type,description,defaultParameterValue[name,value],choices]]"
         let data = try await fetchByURL(jobURL: jobURL, suffix: "api/json", query: query)
         return try decode(JobDetailResponse.self, from: data)
     }
