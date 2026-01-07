@@ -33,6 +33,12 @@ enum APIError: Error, LocalizedError {
     }
 }
 
+// MARK: - Crumb Response
+struct CrumbResponse: Codable {
+    let crumb: String
+    let crumbRequestField: String
+}
+
 @MainActor
 class JenkinsAPI: ObservableObject {
     static let shared = JenkinsAPI()
@@ -40,11 +46,13 @@ class JenkinsAPI: ObservableObject {
     @Published var isLoading = false
     
     private var server: Server?
+    private var cachedCrumb: CrumbResponse?
     
     private init() {}
     
     func configure(with server: Server) {
         self.server = server
+        self.cachedCrumb = nil  // Clear crumb when server changes
     }
     
     // MARK: - API Methods
@@ -115,14 +123,29 @@ class JenkinsAPI: ObservableObject {
         return try decode(Build.self, from: data)
     }
     
-    func triggerBuild(jobName: String) async throws {
+    func triggerBuild(jobName: String, parameters: [String: String]? = nil) async throws {
         let encodedName = jobName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobName
-        let path = "job/\(encodedName)/build"
-        try await post(path: path)
+        // Use buildWithParameters for both parameterized and non-parameterized jobs
+        let path = "job/\(encodedName)/buildWithParameters"
+        try await post(path: path, parameters: parameters)
     }
     
-    func triggerBuildByURL(jobURL: String) async throws {
-        try await postByURL(jobURL: jobURL, suffix: "build")
+    func triggerBuildByURL(jobURL: String, parameters: [String: String]? = nil) async throws {
+        // Use buildWithParameters for both parameterized and non-parameterized jobs
+        try await postByURL(jobURL: jobURL, suffix: "buildWithParameters", parameters: parameters)
+    }
+    
+    /// Fetch CSRF crumb token from Jenkins
+    func fetchCrumb() async throws -> CrumbResponse {
+        // Return cached crumb if available
+        if let cached = cachedCrumb {
+            return cached
+        }
+        
+        let data = try await fetch(path: "crumbIssuer/api/json")
+        let crumb = try decode(CrumbResponse.self, from: data)
+        cachedCrumb = crumb
+        return crumb
     }
     
     func fetchConsoleOutput(jobName: String, buildNumber: Int) async throws -> String {
@@ -211,7 +234,7 @@ class JenkinsAPI: ObservableObject {
         return try await performRequest(request)
     }
     
-    private func post(path: String) async throws {
+    private func post(path: String, parameters: [String: String]? = nil) async throws {
         guard let server = server else { throw APIError.invalidURL }
         guard let baseURL = server.baseURL else { throw APIError.invalidURL }
         
@@ -222,6 +245,18 @@ class JenkinsAPI: ObservableObject {
         request.setValue(server.authHeader, forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 30
         
+        // Add CSRF crumb if available
+        if let crumb = try? await fetchCrumb() {
+            request.setValue(crumb.crumb, forHTTPHeaderField: crumb.crumbRequestField)
+        }
+        
+        // Add parameters as form data
+        if let parameters = parameters, !parameters.isEmpty {
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let formData = parameters.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }.joined(separator: "&")
+            request.httpBody = formData.data(using: .utf8)
+        }
+        
         #if DEBUG
         print("[JenkinsAPI] POST \(url.absoluteString)")
         #endif
@@ -229,7 +264,7 @@ class JenkinsAPI: ObservableObject {
         _ = try await performRequest(request, allowRedirect: true)
     }
     
-    private func postByURL(jobURL: String, suffix: String) async throws {
+    private func postByURL(jobURL: String, suffix: String, parameters: [String: String]? = nil) async throws {
         guard let server = server else { throw APIError.invalidURL }
         
         let url = try buildURL(baseURLString: jobURL, path: suffix)
@@ -238,6 +273,18 @@ class JenkinsAPI: ObservableObject {
         request.httpMethod = "POST"
         request.setValue(server.authHeader, forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 30
+        
+        // Add CSRF crumb if available
+        if let crumb = try? await fetchCrumb() {
+            request.setValue(crumb.crumb, forHTTPHeaderField: crumb.crumbRequestField)
+        }
+        
+        // Add parameters as form data
+        if let parameters = parameters, !parameters.isEmpty {
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            let formData = parameters.map { "\($0.key)=\($0.value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? $0.value)" }.joined(separator: "&")
+            request.httpBody = formData.data(using: .utf8)
+        }
         
         #if DEBUG
         print("[JenkinsAPI] POST \(url.absoluteString)")

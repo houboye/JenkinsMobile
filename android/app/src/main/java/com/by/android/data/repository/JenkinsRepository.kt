@@ -35,6 +35,7 @@ class JenkinsRepository(private val context: Context) {
     
     private var api: JenkinsApi? = null
     private var currentServer: Server? = null
+    private var cachedCrumb: String? = null
     
     companion object {
         private val SERVER_URL = stringPreferencesKey("server_url")
@@ -75,6 +76,7 @@ class JenkinsRepository(private val context: Context) {
         }
         api = null
         currentServer = null
+        cachedCrumb = null
     }
     
     suspend fun login(server: Server): ApiResult<Boolean> {
@@ -110,6 +112,7 @@ class JenkinsRepository(private val context: Context) {
         if (currentServer == server && api != null) return
         
         currentServer = server
+        cachedCrumb = null  // Clear crumb when server changes
         
         val authInterceptor = Interceptor { chain ->
             val request = chain.request().newBuilder()
@@ -236,10 +239,15 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
-    suspend fun triggerBuild(jobName: String): ApiResult<Boolean> {
+    suspend fun triggerBuild(jobName: String, parameters: Map<String, String>? = null): ApiResult<Boolean> {
         return try {
-            val response = api?.triggerBuild(jobName)
-                ?: return ApiResult.Error("未配置服务器")
+            val crumb = getCrumb()
+            val response = if (parameters.isNullOrEmpty()) {
+                api?.triggerBuildSimple(jobName, crumb)
+            } else {
+                api?.triggerBuild(jobName, crumb, parameters)
+            } ?: return ApiResult.Error("未配置服务器")
+            
             if (response.isSuccessful || response.code() == 201 || response.code() == 302) {
                 ApiResult.Success(true)
             } else {
@@ -250,12 +258,17 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
-    suspend fun triggerBuildByUrl(jobUrl: String): ApiResult<Boolean> {
+    suspend fun triggerBuildByUrl(jobUrl: String, parameters: Map<String, String>? = null): ApiResult<Boolean> {
         return try {
-            val fullUrl = buildJobApiUrl(jobUrl = jobUrl, suffix = "build")
+            val fullUrl = buildJobApiUrl(jobUrl = jobUrl, suffix = "buildWithParameters")
+            val crumb = getCrumb()
             
-            val response = api?.triggerBuildByUrl(fullUrl)
-                ?: return ApiResult.Error("未配置服务器")
+            val response = if (parameters.isNullOrEmpty()) {
+                api?.triggerBuildByUrlSimple(fullUrl, crumb)
+            } else {
+                api?.triggerBuildByUrl(fullUrl, crumb, parameters)
+            } ?: return ApiResult.Error("未配置服务器")
+            
             if (response.isSuccessful || response.code() == 201 || response.code() == 302) {
                 ApiResult.Success(true)
             } else {
@@ -263,6 +276,27 @@ class JenkinsRepository(private val context: Context) {
             }
         } catch (e: Exception) {
             ApiResult.Error("网络错误: ${e.message}")
+        }
+    }
+    
+    /**
+     * Fetch CSRF crumb token from Jenkins
+     */
+    private suspend fun getCrumb(): String? {
+        // Return cached crumb if available
+        cachedCrumb?.let { return it }
+        
+        return try {
+            val response = api?.getCrumb()
+            if (response?.isSuccessful == true) {
+                cachedCrumb = response.body()?.crumb
+                cachedCrumb
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            // Crumb might not be enabled on the server
+            null
         }
     }
     
