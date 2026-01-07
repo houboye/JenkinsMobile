@@ -108,7 +108,7 @@ fun JenkinsNavGraph(
                 color = if (jobColor == "unknown") null else jobColor
             )
             
-            val viewModel = remember(jobName) { JobDetailViewModel(repository, jobName) }
+            val viewModel = remember(jobName, jobUrl) { JobDetailViewModel(repository, jobName, jobUrl) }
             
             JobDetailScreen(
                 job = job,

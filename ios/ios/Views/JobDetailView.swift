@@ -13,7 +13,7 @@ struct JobDetailView: View {
     
     init(job: Job) {
         self.job = job
-        _viewModel = StateObject(wrappedValue: JobDetailViewModel(jobName: job.name))
+        _viewModel = StateObject(wrappedValue: JobDetailViewModel(jobName: job.name, jobURL: job.url))
     }
     
     var body: some View {

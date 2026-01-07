@@ -21,9 +21,11 @@ class JobDetailViewModel: ObservableObject {
     
     private let api = JenkinsAPI.shared
     let jobName: String
+    let jobURL: String
     
-    init(jobName: String) {
+    init(jobName: String, jobURL: String) {
         self.jobName = jobName
+        self.jobURL = jobURL
     }
     
     func loadData() async {
@@ -32,7 +34,7 @@ class JobDetailViewModel: ObservableObject {
         errorMessage = nil
         
         do {
-            let detail = try await api.fetchJobDetail(jobName: jobName)
+            let detail = try await api.fetchJobDetailByURL(jobURL: jobURL)
             jobDetail = detail
             builds = detail.builds ?? []
         } catch let error as APIError {
@@ -50,7 +52,7 @@ class JobDetailViewModel: ObservableObject {
         isRefreshing = true
         
         do {
-            let detail = try await api.fetchJobDetail(jobName: jobName)
+            let detail = try await api.fetchJobDetailByURL(jobURL: jobURL)
             jobDetail = detail
             builds = detail.builds ?? []
         } catch {
@@ -63,7 +65,7 @@ class JobDetailViewModel: ObservableObject {
     func triggerBuild() {
         Task {
             do {
-                try await api.triggerBuild(jobName: jobName)
+                try await api.triggerBuildByURL(jobURL: jobURL)
                 triggerMessage = "已触发构建"
                 showTriggerAlert = true
                 

@@ -10,6 +10,7 @@ import retrofit2.Response
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
+import retrofit2.http.Url
 
 interface JenkinsApi {
     
@@ -25,6 +26,10 @@ interface JenkinsApi {
     @GET("job/{jobName}/api/json?tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]")
     suspend fun getJobDetail(@Path("jobName") jobName: String): Response<JobDetailResponse>
     
+    // Use full URL for jobs that might be under a view path
+    @GET
+    suspend fun getJobDetailByUrl(@Url url: String): Response<JobDetailResponse>
+    
     @GET("job/{jobName}/{buildNumber}/api/json")
     suspend fun getBuild(
         @Path("jobName") jobName: String,
@@ -33,6 +38,10 @@ interface JenkinsApi {
     
     @POST("job/{jobName}/build")
     suspend fun triggerBuild(@Path("jobName") jobName: String): Response<ResponseBody>
+    
+    // Use full URL for triggering builds on jobs under a view path
+    @POST
+    suspend fun triggerBuildByUrl(@Url url: String): Response<ResponseBody>
     
     @GET("job/{jobName}/{buildNumber}/consoleText")
     suspend fun getConsoleOutput(

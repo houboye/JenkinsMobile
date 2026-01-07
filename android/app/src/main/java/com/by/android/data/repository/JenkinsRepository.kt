@@ -1,6 +1,7 @@
 package com.by.android.data.repository
 
 import android.content.Context
+import android.net.Uri
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -197,6 +198,28 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
+    suspend fun getJobDetailByUrl(jobUrl: String): ApiResult<JobDetailResponse> {
+        return try {
+            val fullUrl = buildJobApiUrl(
+                jobUrl = jobUrl,
+                suffix = "api/json",
+                query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
+            )
+            
+            val response = api?.getJobDetailByUrl(fullUrl)
+                ?: return ApiResult.Error("未配置服务器")
+            if (response.isSuccessful) {
+                response.body()?.let {
+                    ApiResult.Success(it)
+                } ?: ApiResult.Error("数据为空")
+            } else {
+                handleError(response.code())
+            }
+        } catch (e: Exception) {
+            ApiResult.Error("网络错误: ${e.message}")
+        }
+    }
+    
     suspend fun getBuild(jobName: String, buildNumber: Int): ApiResult<Build> {
         return try {
             val response = api?.getBuild(jobName, buildNumber)
@@ -227,6 +250,22 @@ class JenkinsRepository(private val context: Context) {
         }
     }
     
+    suspend fun triggerBuildByUrl(jobUrl: String): ApiResult<Boolean> {
+        return try {
+            val fullUrl = buildJobApiUrl(jobUrl = jobUrl, suffix = "build")
+            
+            val response = api?.triggerBuildByUrl(fullUrl)
+                ?: return ApiResult.Error("未配置服务器")
+            if (response.isSuccessful || response.code() == 201 || response.code() == 302) {
+                ApiResult.Success(true)
+            } else {
+                handleError(response.code())
+            }
+        } catch (e: Exception) {
+            ApiResult.Error("网络错误: ${e.message}")
+        }
+    }
+    
     suspend fun getConsoleOutput(jobName: String, buildNumber: Int): ApiResult<String> {
         return try {
             val response = api?.getConsoleOutput(jobName, buildNumber)
@@ -246,6 +285,32 @@ class JenkinsRepository(private val context: Context) {
             401, 403 -> ApiResult.Error("认证失败", code)
             else -> ApiResult.Error("服务器错误: $code", code)
         }
+    }
+    
+    /**
+     * Build URL using Uri.Builder for proper URL construction
+     * @param jobUrl Base job URL (e.g., http://host/view/xxx/job/yyy/)
+     * @param suffix Path suffix to append (e.g., "api/json" or "build")
+     * @param query Optional query string (e.g., "tree=name,url,...")
+     */
+    private fun buildJobApiUrl(jobUrl: String, suffix: String, query: String? = null): String {
+        val baseUri = Uri.parse(jobUrl)
+        val builder = baseUri.buildUpon()
+        
+        // Append path suffix
+        var path = baseUri.path ?: ""
+        if (!path.endsWith("/")) {
+            path += "/"
+        }
+        path += suffix
+        builder.path(path)
+        
+        // Set encoded query to avoid double encoding of special characters like []
+        if (query != null) {
+            builder.encodedQuery(query)
+        }
+        
+        return builder.build().toString()
     }
 }
 

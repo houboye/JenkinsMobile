@@ -88,15 +88,23 @@ class JenkinsAPI: ObservableObject {
     }
     
     func fetchAllJobs() async throws -> [Job] {
-        let data = try await fetch(path: "api/json?tree=jobs[name,url,color,lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url],healthReport[description,score],buildable]")
+        let query = "tree=jobs[name,url,color,lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url],healthReport[description,score],buildable]"
+        let data = try await fetch(path: "api/json", query: query)
         let response = try decode(JobsResponse.self, from: data)
         return response.jobs
     }
     
     func fetchJobDetail(jobName: String) async throws -> JobDetailResponse {
         let encodedName = jobName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobName
-        let path = "job/\(encodedName)/api/json?tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
-        let data = try await fetch(path: path)
+        let path = "job/\(encodedName)/api/json"
+        let query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
+        let data = try await fetch(path: path, query: query)
+        return try decode(JobDetailResponse.self, from: data)
+    }
+    
+    func fetchJobDetailByURL(jobURL: String) async throws -> JobDetailResponse {
+        let query = "tree=name,url,color,description,buildable,builds[number,url,result,timestamp,duration,displayName,building,description],lastBuild[number,url],lastSuccessfulBuild[number,url],lastFailedBuild[number,url]"
+        let data = try await fetchByURL(jobURL: jobURL, suffix: "api/json", query: query)
         return try decode(JobDetailResponse.self, from: data)
     }
     
@@ -113,6 +121,10 @@ class JenkinsAPI: ObservableObject {
         try await post(path: path)
     }
     
+    func triggerBuildByURL(jobURL: String) async throws {
+        try await postByURL(jobURL: jobURL, suffix: "build")
+    }
+    
     func fetchConsoleOutput(jobName: String, buildNumber: Int) async throws -> String {
         let encodedName = jobName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobName
         let path = "job/\(encodedName)/\(buildNumber)/consoleText"
@@ -122,11 +134,47 @@ class JenkinsAPI: ObservableObject {
     
     // MARK: - Private Methods
     
-    private func fetch(path: String, acceptJSON: Bool = true) async throws -> Data {
+    /// Parse query string into URLQueryItem array
+    private func parseQueryString(_ query: String) -> [URLQueryItem] {
+        query.split(separator: "&").compactMap { pair in
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2 else { return nil }
+            return URLQueryItem(name: String(parts[0]), value: String(parts[1]))
+        }
+    }
+    
+    /// Build URL using URLComponents for proper URL construction
+    private func buildURL(baseURLString: String, path: String? = nil, query: String? = nil) throws -> URL {
+        guard var components = URLComponents(string: baseURLString) else {
+            throw APIError.invalidURL
+        }
+        
+        // Append path if provided
+        if let path = path {
+            var currentPath = components.path
+            if !currentPath.hasSuffix("/") {
+                currentPath += "/"
+            }
+            currentPath += path
+            components.path = currentPath
+        }
+        
+        // Parse and set query items (URLQueryItem handles encoding properly)
+        if let query = query {
+            components.queryItems = parseQueryString(query)
+        }
+        
+        guard let url = components.url else {
+            throw APIError.invalidURL
+        }
+        return url
+    }
+    
+    private func fetch(path: String, query: String? = nil, acceptJSON: Bool = true) async throws -> Data {
         guard let server = server else { throw APIError.invalidURL }
         guard let baseURL = server.baseURL else { throw APIError.invalidURL }
         
-        let url = baseURL.appendingPathComponent(path)
+        let url = try buildURL(baseURLString: baseURL.absoluteString, path: path, query: query)
         
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -136,6 +184,69 @@ class JenkinsAPI: ObservableObject {
         }
         request.timeoutInterval = 30
         
+        #if DEBUG
+        print("[JenkinsAPI] GET \(url.absoluteString)")
+        #endif
+        
+        return try await performRequest(request)
+    }
+    
+    private func fetchByURL(jobURL: String, suffix: String, query: String? = nil, acceptJSON: Bool = true) async throws -> Data {
+        guard let server = server else { throw APIError.invalidURL }
+        
+        let url = try buildURL(baseURLString: jobURL, path: suffix, query: query)
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue(server.authHeader, forHTTPHeaderField: "Authorization")
+        if acceptJSON {
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
+        request.timeoutInterval = 30
+        
+        #if DEBUG
+        print("[JenkinsAPI] GET \(url.absoluteString)")
+        #endif
+        
+        return try await performRequest(request)
+    }
+    
+    private func post(path: String) async throws {
+        guard let server = server else { throw APIError.invalidURL }
+        guard let baseURL = server.baseURL else { throw APIError.invalidURL }
+        
+        let url = try buildURL(baseURLString: baseURL.absoluteString, path: path)
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(server.authHeader, forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30
+        
+        #if DEBUG
+        print("[JenkinsAPI] POST \(url.absoluteString)")
+        #endif
+        
+        _ = try await performRequest(request, allowRedirect: true)
+    }
+    
+    private func postByURL(jobURL: String, suffix: String) async throws {
+        guard let server = server else { throw APIError.invalidURL }
+        
+        let url = try buildURL(baseURLString: jobURL, path: suffix)
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue(server.authHeader, forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 30
+        
+        #if DEBUG
+        print("[JenkinsAPI] POST \(url.absoluteString)")
+        #endif
+        
+        _ = try await performRequest(request, allowRedirect: true)
+    }
+    
+    private func performRequest(_ request: URLRequest, allowRedirect: Bool = false) async throws -> Data {
         do {
             let (data, response) = try await URLSession.shared.data(for: request)
             
@@ -146,39 +257,8 @@ class JenkinsAPI: ObservableObject {
             switch httpResponse.statusCode {
             case 200...299:
                 return data
-            case 401, 403:
-                throw APIError.unauthorized
-            default:
-                throw APIError.serverError(httpResponse.statusCode)
-            }
-        } catch let error as APIError {
-            throw error
-        } catch {
-            throw APIError.networkError(error)
-        }
-    }
-    
-    private func post(path: String) async throws {
-        guard let server = server else { throw APIError.invalidURL }
-        guard let baseURL = server.baseURL else { throw APIError.invalidURL }
-        
-        let url = baseURL.appendingPathComponent(path)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(server.authHeader, forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
-        
-        do {
-            let (_, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
-                throw APIError.invalidResponse
-            }
-            
-            switch httpResponse.statusCode {
-            case 200...299, 201, 302:
-                return
+            case 201 where allowRedirect, 302 where allowRedirect:
+                return data
             case 401, 403:
                 throw APIError.unauthorized
             default:

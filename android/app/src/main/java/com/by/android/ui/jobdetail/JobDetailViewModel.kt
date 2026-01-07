@@ -23,7 +23,8 @@ data class JobDetailUiState(
 
 class JobDetailViewModel(
     private val repository: JenkinsRepository,
-    private val jobName: String
+    private val jobName: String,
+    private val jobUrl: String
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(JobDetailUiState())
@@ -37,7 +38,8 @@ class JobDetailViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             
-            when (val result = repository.getJobDetail(jobName)) {
+            // Use URL-based method to support jobs under view paths
+            when (val result = repository.getJobDetailByUrl(jobUrl)) {
                 is ApiResult.Success -> {
                     _uiState.update { 
                         it.copy(
@@ -60,7 +62,7 @@ class JobDetailViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
             
-            when (val result = repository.getJobDetail(jobName)) {
+            when (val result = repository.getJobDetailByUrl(jobUrl)) {
                 is ApiResult.Success -> {
                     _uiState.update { 
                         it.copy(
@@ -79,7 +81,7 @@ class JobDetailViewModel(
     
     fun triggerBuild() {
         viewModelScope.launch {
-            when (val result = repository.triggerBuild(jobName)) {
+            when (val result = repository.triggerBuildByUrl(jobUrl)) {
                 is ApiResult.Success -> {
                     _uiState.update { it.copy(triggerMessage = "已触发构建") }
                     kotlinx.coroutines.delay(1000)
