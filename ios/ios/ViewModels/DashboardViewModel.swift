@@ -20,6 +20,11 @@ class DashboardViewModel: ObservableObject {
     @Published var triggerMessage: String?
     @Published var showTriggerAlert = false
     
+    // 参数对话框状态
+    @Published var showParametersSheet = false
+    @Published var pendingJob: Job?
+    @Published var parameters: [ParameterDefinition] = []
+    
     private let api = JenkinsAPI.shared
     
     var selectedView: JenkinsView? {
@@ -90,14 +95,61 @@ class DashboardViewModel: ObservableObject {
         }
     }
     
+    /// 点击构建按钮时调用 - 先检查是否有参数
     func triggerBuild(for job: Job) {
         Task {
             do {
-                try await api.triggerBuild(jobName: job.name)
+                // 先获取 job 详情，检查是否有参数
+                let jobDetail = try await api.fetchJobDetailByURL(jobURL: job.url)
+                let params = jobDetail.parameterDefinitions
+                
+                if !params.isEmpty {
+                    // 有参数，显示参数对话框
+                    pendingJob = job
+                    parameters = params
+                    showParametersSheet = true
+                } else {
+                    // 无参数，直接触发构建
+                    try await api.triggerBuildByURL(jobURL: job.url)
+                    triggerMessage = "已触发构建: \(job.name)"
+                    showTriggerAlert = true
+                    
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    await refresh()
+                }
+            } catch let error as APIError {
+                // 获取详情失败，尝试直接构建
+                do {
+                    try await api.triggerBuildByURL(jobURL: job.url)
+                    triggerMessage = "已触发构建: \(job.name)"
+                    showTriggerAlert = true
+                    
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    await refresh()
+                } catch {
+                    triggerMessage = "触发失败: \(error.localizedDescription)"
+                    showTriggerAlert = true
+                }
+            } catch {
+                triggerMessage = "触发失败: \(error.localizedDescription)"
+                showTriggerAlert = true
+            }
+        }
+    }
+    
+    /// 带参数触发构建
+    func triggerBuildWithParameters(_ params: [String: String]) {
+        guard let job = pendingJob else { return }
+        
+        Task {
+            do {
+                try await api.triggerBuildByURL(jobURL: job.url, parameters: params)
                 triggerMessage = "已触发构建: \(job.name)"
                 showTriggerAlert = true
+                showParametersSheet = false
+                pendingJob = nil
+                parameters = []
                 
-                // Refresh after a short delay
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 await refresh()
             } catch let error as APIError {
@@ -109,5 +161,11 @@ class DashboardViewModel: ObservableObject {
             }
         }
     }
+    
+    /// 隐藏参数对话框
+    func hideParametersSheet() {
+        showParametersSheet = false
+        pendingJob = nil
+        parameters = []
+    }
 }
-

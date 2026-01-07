@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.by.android.data.model.JenkinsView
 import com.by.android.data.model.Job
+import com.by.android.data.model.ParameterDefinition
 import com.by.android.data.repository.ApiResult
 import com.by.android.data.repository.JenkinsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,7 +20,11 @@ data class DashboardUiState(
     val isLoading: Boolean = false,
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
-    val triggerMessage: String? = null
+    val triggerMessage: String? = null,
+    // 参数对话框状态
+    val showParametersDialog: Boolean = false,
+    val pendingJob: Job? = null,
+    val parameters: List<ParameterDefinition> = emptyList()
 )
 
 class DashboardViewModel(
@@ -97,23 +102,76 @@ class DashboardViewModel(
         }
     }
     
+    /** 点击构建按钮时调用 - 先检查是否有参数 */
     fun triggerBuild(job: Job) {
         viewModelScope.launch {
-            when (val result = repository.triggerBuild(job.name)) {
+            // 先获取 job 详情，检查是否有参数
+            when (val result = repository.getJobDetailByUrl(job.url)) {
                 is ApiResult.Success -> {
-                    _uiState.update { 
-                        it.copy(triggerMessage = "已触发构建: ${job.name}") 
+                    val jobDetail = result.data
+                    if (jobDetail.hasParameters) {
+                        // 有参数，显示参数对话框
+                        _uiState.update {
+                            it.copy(
+                                showParametersDialog = true,
+                                pendingJob = job,
+                                parameters = jobDetail.parameterDefinitions
+                            )
+                        }
+                    } else {
+                        // 无参数，直接触发构建
+                        executeTriggerBuild(job.url, null)
                     }
-                    // Refresh after a short delay
-                    kotlinx.coroutines.delay(1000)
-                    refresh()
                 }
                 is ApiResult.Error -> {
-                    _uiState.update { 
-                        it.copy(triggerMessage = "触发失败: ${result.message}") 
-                    }
+                    // 获取详情失败，尝试直接构建
+                    executeTriggerBuild(job.url, null)
                 }
             }
+        }
+    }
+    
+    /** 带参数触发构建 */
+    fun triggerBuildWithParameters(parameters: Map<String, String>) {
+        val job = _uiState.value.pendingJob ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(showParametersDialog = false) }
+            executeTriggerBuild(job.url, parameters)
+        }
+    }
+    
+    /** 执行构建 */
+    private suspend fun executeTriggerBuild(jobUrl: String, parameters: Map<String, String>?) {
+        when (val result = repository.triggerBuildByUrl(jobUrl, parameters)) {
+            is ApiResult.Success -> {
+                _uiState.update { 
+                    it.copy(
+                        triggerMessage = "已触发构建",
+                        pendingJob = null
+                    ) 
+                }
+                kotlinx.coroutines.delay(1000)
+                refresh()
+            }
+            is ApiResult.Error -> {
+                _uiState.update { 
+                    it.copy(
+                        triggerMessage = "触发失败: ${result.message}",
+                        pendingJob = null
+                    ) 
+                }
+            }
+        }
+    }
+    
+    /** 隐藏参数对话框 */
+    fun hideParametersDialog() {
+        _uiState.update { 
+            it.copy(
+                showParametersDialog = false,
+                pendingJob = null,
+                parameters = emptyList()
+            ) 
         }
     }
     
@@ -125,4 +183,3 @@ class DashboardViewModel(
         _uiState.update { it.copy(triggerMessage = null) }
     }
 }
-

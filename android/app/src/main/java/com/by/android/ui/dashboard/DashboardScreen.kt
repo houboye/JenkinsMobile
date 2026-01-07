@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.by.android.data.model.Job
+import com.by.android.ui.components.BuildParametersDialog
 import com.by.android.ui.components.JobRow
 import com.by.android.ui.theme.AndroidTheme
 
@@ -80,6 +81,16 @@ fun DashboardScreen(
                     Text("确定")
                 }
             }
+        )
+    }
+    
+    // Parameters Dialog
+    if (uiState.showParametersDialog && uiState.pendingJob != null) {
+        BuildParametersDialog(
+            jobName = uiState.pendingJob!!.name,
+            parameters = uiState.parameters,
+            onBuild = { params -> viewModel.triggerBuildWithParameters(params) },
+            onDismiss = { viewModel.hideParametersDialog() }
         )
     }
     

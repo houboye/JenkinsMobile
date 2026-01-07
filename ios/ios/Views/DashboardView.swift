@@ -107,6 +107,20 @@ struct DashboardView: View {
             } message: {
                 Text(viewModel.triggerMessage ?? "")
             }
+            .sheet(isPresented: $viewModel.showParametersSheet) {
+                if let job = viewModel.pendingJob {
+                    BuildParametersView(
+                        jobName: job.name,
+                        parameters: viewModel.parameters,
+                        onBuild: { params in
+                            viewModel.triggerBuildWithParameters(params)
+                        },
+                        onCancel: {
+                            viewModel.hideParametersSheet()
+                        }
+                    )
+                }
+            }
         }
         .task {
             await viewModel.loadData()
