@@ -10,6 +10,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.by.android.data.api.JenkinsApi
 import com.by.android.data.model.Build
+import com.by.android.data.model.BuildDetailResponse
 import com.by.android.data.model.CrumbResponse
 import com.by.android.data.model.JenkinsView
 import com.by.android.data.model.Job
@@ -391,6 +392,71 @@ class JenkinsRepository(private val context: Context) {
                 
                 if (response.isSuccessful) {
                     ApiResult.Success(response.body?.string() ?: "")
+                } else {
+                    handleError(response.code)
+                }
+            } catch (e: Exception) {
+                ApiResult.Error("网络错误: ${e.message}")
+            }
+        }
+    }
+    
+    /** Get build detail by URL (includes parameters used in the build) */
+    suspend fun getBuildDetailByUrl(buildUrl: String): ApiResult<BuildDetailResponse> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val server = currentServer ?: return@withContext ApiResult.Error("未配置服务器")
+                val client = httpClient ?: return@withContext ApiResult.Error("未配置服务器")
+                
+                val query = "tree=number,url,result,timestamp,duration,displayName,building,description,estimatedDuration,fullDisplayName,actions[parameters[name,value]]"
+                val fullUrl = buildJobApiUrl(jobUrl = buildUrl, suffix = "api/json", query = query)
+                
+                val request = Request.Builder()
+                    .url(fullUrl)
+                    .get()
+                    .header("Authorization", server.authHeader)
+                    .header("Accept", "application/json")
+                    .build()
+                
+                val response = client.newCall(request).execute()
+                
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: return@withContext ApiResult.Error("Empty response")
+                    val detail = gson.fromJson(body, BuildDetailResponse::class.java)
+                    ApiResult.Success(detail)
+                } else {
+                    handleError(response.code)
+                }
+            } catch (e: Exception) {
+                ApiResult.Error("网络错误: ${e.message}")
+            }
+        }
+    }
+    
+    /** Delete a build by URL */
+    suspend fun deleteBuildByUrl(buildUrl: String): ApiResult<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val server = currentServer ?: return@withContext ApiResult.Error("未配置服务器")
+                val client = httpClient ?: return@withContext ApiResult.Error("未配置服务器")
+                
+                val fullUrl = buildJobApiUrl(jobUrl = buildUrl, suffix = "doDelete")
+                val crumb = fetchCrumbDirect()
+                
+                val requestBuilder = Request.Builder()
+                    .url(fullUrl)
+                    .post(FormBody.Builder().build())
+                    .header("Authorization", server.authHeader)
+                
+                if (crumb != null) {
+                    requestBuilder.header(crumb.crumbRequestField, crumb.crumb)
+                }
+                
+                val request = requestBuilder.build()
+                val response = client.newCall(request).execute()
+                
+                if (response.isSuccessful || response.code == 302) {
+                    ApiResult.Success(true)
                 } else {
                     handleError(response.code)
                 }

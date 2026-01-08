@@ -161,6 +161,15 @@ struct ParameterDefinition: Codable, Identifiable {
     
     var id: String { name }
     
+    /// Custom initializer for creating instances programmatically
+    init(name: String, type: String?, description: String?, defaultParameterValue: ParameterValue?, choices: [String]?) {
+        self.name = name
+        self.type = type
+        self.description = description
+        self.defaultParameterValue = defaultParameterValue
+        self.choices = choices
+    }
+    
     /// Parameter type enum for easier handling
     var parameterType: ParameterType {
         guard let type = type else { return .string }
@@ -185,6 +194,12 @@ struct ParameterDefinition: Codable, Identifiable {
 struct ParameterValue: Codable {
     let name: String?
     let value: String?
+    
+    /// Custom initializer for creating instances programmatically
+    init(name: String?, value: String?) {
+        self.name = name
+        self.value = value
+    }
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -212,3 +227,81 @@ enum ParameterType: String {
     case password
 }
 
+// MARK: - Build Detail Response (includes parameters used in the build)
+
+struct BuildDetailResponse: Codable {
+    let number: Int
+    let url: String
+    let result: String?
+    let timestamp: Int64?
+    let duration: Int64?
+    let displayName: String?
+    let building: Bool?
+    let description: String?
+    let estimatedDuration: Int64?
+    let fullDisplayName: String?
+    let actions: [BuildAction]?
+    
+    /// Get build parameters from actions
+    var buildParameters: [BuildParameter] {
+        actions?.first(where: { $0.parameters != nil })?.parameters ?? []
+    }
+    
+    /// Check if this build has parameters
+    var hasParameters: Bool {
+        !buildParameters.isEmpty
+    }
+    
+    /// Convert to Build model
+    func toBuild() -> Build {
+        Build(
+            number: number,
+            url: url,
+            result: result,
+            timestamp: timestamp,
+            duration: duration,
+            displayName: displayName,
+            building: building,
+            description: description,
+            estimatedDuration: estimatedDuration,
+            fullDisplayName: fullDisplayName
+        )
+    }
+}
+
+struct BuildAction: Codable {
+    let parameters: [BuildParameter]?
+    
+    enum CodingKeys: String, CodingKey {
+        case parameters
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        parameters = try? container.decodeIfPresent([BuildParameter].self, forKey: .parameters)
+    }
+}
+
+struct BuildParameter: Codable, Identifiable {
+    let name: String
+    let value: String?
+    
+    var id: String { name }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decode(String.self, forKey: .name)
+        // value can be String or Bool, try both
+        if let stringValue = try? container.decodeIfPresent(String.self, forKey: .value) {
+            value = stringValue
+        } else if let boolValue = try? container.decodeIfPresent(Bool.self, forKey: .value) {
+            value = boolValue ? "true" : "false"
+        } else {
+            value = nil
+        }
+    }
+    
+    enum CodingKeys: String, CodingKey {
+        case name, value
+    }
+}

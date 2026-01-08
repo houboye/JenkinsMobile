@@ -22,13 +22,9 @@ Jenkins Mobile 是一个跨平台的 Jenkins 移动客户端，支持 iOS 和 An
 - 支持退出登录
 
 #### 技术实现
-- **iOS**: 使用 `UserDefaults` 持久化存储
-- **Android**: 使用 `DataStore` 持久化存储
+- **iOS**: 使用 UserDefaults 持久化存储
+- **Android**: 使用 DataStore 持久化存储
 - **认证方式**: HTTP Basic Auth (Base64 编码)
-
-#### 文件位置
-- iOS: `ios/ios/Views/LoginView.swift`, `ios/ios/Services/StorageService.swift`
-- Android: `android/.../ui/login/LoginScreen.kt`, `android/.../data/repository/JenkinsRepository.kt`
 
 ---
 
@@ -53,18 +49,6 @@ Jenkins Mobile 是一个跨平台的 Jenkins 移动客户端，支持 iOS 和 An
 | NOT_BUILT | 灰色 | 从未构建 |
 | BUILDING | 蓝色+动画 | 正在构建 |
 
-#### 健康度图标
-根据任务构建稳定性显示不同天气图标：
-- ☀️ 晴天 (81-100%)
-- 🌤️ 多云 (61-80%)
-- ⛅ 阴天 (41-60%)
-- 🌧️ 雨天 (21-40%)
-- ⛈️ 雷雨 (0-20%)
-
-#### 文件位置
-- iOS: `ios/ios/Views/DashboardView.swift`, `ios/ios/ViewModels/DashboardViewModel.swift`
-- Android: `android/.../ui/dashboard/DashboardScreen.kt`, `android/.../ui/dashboard/DashboardViewModel.kt`
-
 ---
 
 ### 3. 任务详情
@@ -75,20 +59,56 @@ Jenkins Mobile 是一个跨平台的 Jenkins 移动客户端，支持 iOS 和 An
 - 显示构建历史列表
 - 支持触发构建（自动检测是否需要参数）
 - 支持下拉刷新
-
-#### 构建历史信息
-- 构建编号 (#123)
-- 构建状态（成功/失败/构建中等）
-- 构建时间（相对时间，如"2小时前"）
-- 构建耗时（如"5分32秒"）
-
-#### 文件位置
-- iOS: `ios/ios/Views/JobDetailView.swift`, `ios/ios/ViewModels/JobDetailViewModel.swift`
-- Android: `android/.../ui/jobdetail/JobDetailScreen.kt`, `android/.../ui/jobdetail/JobDetailViewModel.kt`
+- 点击构建记录进入构建详情页
 
 ---
 
-### 4. 触发构建
+### 4. 构建详情（核心功能）
+
+#### 功能描述
+构建详情页面提供完整的构建信息查看和操作功能：
+
+1. **查看构建状态**
+   - 构建结果（成功/失败/不稳定/中止等）
+   - 构建编号
+   - 开始时间（精确到秒）
+   - 构建耗时
+   - 构建描述（如有）
+
+2. **查看构建日志**
+   - 完整的控制台输出
+   - 等宽字体显示，保持日志格式
+   - 深色背景，便于阅读
+   - 支持文本选择和复制
+   - 自动滚动到底部
+   - 支持刷新获取最新日志
+
+3. **查看构建参数**
+   - 显示该构建使用的所有参数
+   - 参数名和参数值清晰展示
+   - 无参数时显示提示信息
+
+4. **重新构建 (Rebuild)**
+   - 使用相同参数重新触发构建
+   - 如果任务有参数，弹出参数编辑页面
+   - 预填充上次构建的参数值
+   - 用户可修改参数后再触发构建
+   - 无参数任务直接触发构建
+
+5. **删除构建**
+   - 删除当前构建记录
+   - 删除前需二次确认
+   - 删除成功后自动返回上一页
+
+#### UI 设计
+- 使用 Tab 切换三个视图：详情、日志、参数
+- 日志视图背景色: #1E1E1E (深灰色)
+- 日志文字色: #D4D4D4 (浅灰色)
+- 日志字体: 等宽字体 (Monospace) 12sp/pt
+
+---
+
+### 5. 触发构建
 
 #### 功能描述
 - 支持无参数构建（直接触发）
@@ -105,38 +125,6 @@ Jenkins Mobile 是一个跨平台的 Jenkins 移动客户端，支持 iOS 和 An
 | Choice | 下拉选择 | 从预定义选项中选择 |
 | Password | 密码输入框 | 隐藏输入内容 |
 
-#### 技术细节
-- 使用 `buildWithParameters` 端点
-- CSRF Token 通过 `/crumbIssuer/api/json` 获取
-- Crumb Header 名称从响应的 `crumbRequestField` 动态获取
-- Android 使用 `CookieJar` 保持 Session
-
-#### 文件位置
-- iOS: `ios/ios/Views/BuildParametersView.swift`
-- Android: `android/.../ui/components/BuildParametersDialog.kt`
-
----
-
-### 5. 构建日志查看
-
-#### 功能描述
-- 查看构建的完整控制台输出
-- 等宽字体显示，保持日志格式
-- 深色背景，便于阅读
-- 支持文本选择和复制
-- 自动滚动到底部
-- 支持刷新获取最新日志
-
-#### UI 设计
-- 背景色: `#1E1E1E` (深灰色)
-- 文字色: `#D4D4D4` (浅灰色)
-- 字体: 等宽字体 (Monospace)
-- 字号: 12sp/pt
-
-#### 文件位置
-- iOS: `ios/ios/Views/BuildLogView.swift`
-- Android: `android/.../ui/buildlog/BuildLogScreen.kt`, `android/.../ui/buildlog/BuildLogViewModel.kt`
-
 ---
 
 ### 6. 设置页面
@@ -146,10 +134,6 @@ Jenkins Mobile 是一个跨平台的 Jenkins 移动客户端，支持 iOS 和 An
 - 显示当前登录的用户名
 - 支持退出登录
 
-#### 文件位置
-- iOS: `ios/ios/Views/SettingsView.swift`
-- Android: `android/.../ui/settings/SettingsScreen.kt`
-
 ---
 
 ## API 接口
@@ -158,160 +142,62 @@ Jenkins Mobile 是一个跨平台的 Jenkins 移动客户端，支持 iOS 和 An
 
 | 接口 | 方法 | 说明 |
 |-----|------|-----|
-| `/api/json` | GET | 获取服务器信息和视图列表 |
-| `/view/{name}/api/json` | GET | 获取指定视图的任务列表 |
-| `/job/{name}/api/json` | GET | 获取任务详情和构建历史 |
-| `/job/{name}/buildWithParameters` | POST | 触发构建（带参数） |
-| `/job/{name}/{build}/consoleText` | GET | 获取构建日志 |
-| `/crumbIssuer/api/json` | GET | 获取 CSRF Token |
-
-### 认证方式
-```
-Authorization: Basic base64(username:apiToken)
-```
-
-### CSRF 保护
-```
-Jenkins-Crumb: {crumb_value}
-```
+| /api/json | GET | 获取服务器信息和视图列表 |
+| /view/{name}/api/json | GET | 获取指定视图的任务列表 |
+| /job/{name}/api/json | GET | 获取任务详情和构建历史 |
+| /job/{name}/{build}/api/json | GET | 获取构建详情（含参数） |
+| /job/{name}/buildWithParameters | POST | 触发构建（带参数） |
+| /job/{name}/{build}/consoleText | GET | 获取构建日志 |
+| /job/{name}/{build}/doDelete | POST | 删除构建 |
+| /crumbIssuer/api/json | GET | 获取 CSRF Token |
 
 ---
 
-## 数据模型
+## 页面导航流程
 
-### Server（服务器配置）
-```swift
-struct Server {
-    var url: String        // 服务器地址
-    var username: String   // 用户名
-    var apiToken: String   // API Token
-}
 ```
-
-### Job（任务）
-```swift
-struct Job {
-    let name: String              // 任务名称
-    let url: String               // 任务 URL
-    let color: String?            // 状态颜色
-    let lastBuild: BuildReference?
-    let lastSuccessfulBuild: BuildReference?
-    let lastFailedBuild: BuildReference?
-    let buildable: Bool?
-    let healthReport: [HealthReport]?
-}
-```
-
-### Build（构建）
-```swift
-struct Build {
-    let number: Int         // 构建编号
-    let url: String         // 构建 URL
-    let result: String?     // 构建结果
-    let timestamp: Int64?   // 开始时间戳
-    let duration: Int64?    // 构建耗时(ms)
-    let building: Bool?     // 是否正在构建
-}
-```
-
-### ParameterDefinition（参数定义）
-```swift
-struct ParameterDefinition {
-    let name: String              // 参数名
-    let type: String?             // 参数类型
-    let description: String?      // 参数描述
-    let defaultParameterValue: ParameterValue?
-    let choices: [String]?        // 选项（Choice类型）
-}
-```
-
----
-
-## 项目结构
-
-### iOS 项目结构
-```
-ios/
-├── ios/
-│   ├── Models/          # 数据模型
-│   │   ├── Server.swift
-│   │   ├── Job.swift
-│   │   ├── Build.swift
-│   │   └── JenkinsView.swift
-│   ├── Services/        # 服务层
-│   │   ├── JenkinsAPI.swift
-│   │   └── StorageService.swift
-│   ├── ViewModels/      # 视图模型
-│   │   ├── LoginViewModel.swift
-│   │   ├── DashboardViewModel.swift
-│   │   └── JobDetailViewModel.swift
-│   ├── Views/           # UI 视图
-│   │   ├── LoginView.swift
-│   │   ├── DashboardView.swift
-│   │   ├── JobDetailView.swift
-│   │   ├── BuildLogView.swift
-│   │   ├── BuildParametersView.swift
-│   │   └── SettingsView.swift
-│   └── Components/      # 可复用组件
-│       ├── StatusIcon.swift
-│       ├── WeatherIcon.swift
-│       └── JobRowView.swift
-```
-
-### Android 项目结构
-```
-android/app/src/main/java/com/by/android/
-├── data/
-│   ├── api/             # API 接口定义
-│   │   └── JenkinsApi.kt
-│   ├── model/           # 数据模型
-│   │   ├── Server.kt
-│   │   ├── Job.kt
-│   │   ├── Build.kt
-│   │   └── JenkinsView.kt
-│   └── repository/      # 数据仓库
-│       └── JenkinsRepository.kt
-├── ui/
-│   ├── login/           # 登录
-│   ├── dashboard/       # 任务列表
-│   ├── jobdetail/       # 任务详情
-│   ├── buildlog/        # 构建日志
-│   ├── settings/        # 设置
-│   ├── components/      # 可复用组件
-│   ├── navigation/      # 导航
-│   └── theme/           # 主题
-└── MainActivity.kt
+登录页 (LoginView)
+    │
+    ▼
+Dashboard (DashboardView)
+    │
+    ├── 点击任务 ──► 任务详情 (JobDetailView)
+    │                    │
+    │                    ├── 点击构建记录 ──► 构建详情 (BuildDetailView)
+    │                    │                        │
+    │                    │                        ├── 详情 Tab: 状态信息 + 操作按钮
+    │                    │                        ├── 日志 Tab: 控制台输出
+    │                    │                        └── 参数 Tab: 构建参数
+    │                    │
+    │                    └── 点击触发构建 ──► [参数页面] ──► 触发
+    │
+    ├── 点击构建按钮 ──► [参数页面] ──► 触发
+    │
+    └── 点击设置 ──► 设置页 (SettingsView)
+                        │
+                        └── 退出登录 ──► 登录页
 ```
 
 ---
 
 ## UI/UX 设计原则
 
-1. **iOS 设计语言**: 使用 iOS 原生设计风格，包括导航栏、列表样式、Sheet 等
+1. **iOS 设计语言**: 使用 iOS 原生设计风格
 2. **一致性**: iOS 和 Android 界面保持 90% 以上相似度
 3. **响应式**: 支持不同屏幕尺寸
-4. **状态反馈**: 加载中显示进度指示器，错误显示友好提示
+4. **状态反馈**: 加载中显示进度指示器
 5. **下拉刷新**: 所有列表支持下拉刷新
-6. **深色模式**: 支持系统深色模式（自动跟随系统）
-
----
-
-## 安全考虑
-
-1. **凭证存储**: 使用平台安全存储机制（iOS Keychain / Android EncryptedSharedPreferences）
-2. **CSRF 保护**: 正确处理 Jenkins CSRF Token
-3. **Session 管理**: 保持 Session Cookie 以确保 Crumb 有效
-4. **敏感信息**: 密码参数使用密码输入框，不显示明文
+6. **深色模式**: 支持系统深色模式
+7. **操作确认**: 危险操作需要二次确认
 
 ---
 
 ## 未来扩展
 
 - [ ] 构建队列管理
-- [ ] 构建参数历史记录
 - [ ] 构建通知推送
 - [ ] 多服务器管理
-- [ ] 构建收藏功能
 - [ ] 搜索任务功能
 - [ ] 构建统计图表
 - [ ] Pipeline 可视化
+- [ ] 构建取消功能

@@ -160,6 +160,16 @@ class JenkinsAPI: ObservableObject {
         return String(data: data, encoding: .utf8) ?? ""
     }
     
+    func fetchBuildDetailByURL(buildURL: String) async throws -> BuildDetailResponse {
+        let query = "tree=number,url,result,timestamp,duration,displayName,building,description,estimatedDuration,fullDisplayName,actions[parameters[name,value]]"
+        let data = try await fetchByURL(jobURL: buildURL, suffix: "api/json", query: query)
+        return try decode(BuildDetailResponse.self, from: data)
+    }
+    
+    func deleteBuild(buildURL: String) async throws {
+        _ = try await postByURL(jobURL: buildURL, suffix: "doDelete")
+    }
+    
     // MARK: - Private Methods
     
     /// Parse query string into URLQueryItem array

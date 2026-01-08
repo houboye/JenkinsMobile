@@ -171,6 +171,52 @@ data class ParameterValue(
     val value: String? = null
 )
 
+// Build Detail Response (includes parameters used in the build)
+data class BuildDetailResponse(
+    val number: Int,
+    val url: String,
+    val result: String? = null,
+    val timestamp: Long? = null,
+    val duration: Long? = null,
+    val displayName: String? = null,
+    val building: Boolean? = null,
+    val description: String? = null,
+    val estimatedDuration: Long? = null,
+    val fullDisplayName: String? = null,
+    val actions: List<BuildAction>? = null
+) {
+    /** Get build parameters from actions */
+    val buildParameters: List<BuildParameter>
+        get() = actions?.firstOrNull { it.parameters != null }?.parameters ?: emptyList()
+    
+    /** Check if this build has parameters */
+    val hasParameters: Boolean
+        get() = buildParameters.isNotEmpty()
+    
+    /** Convert to Build model */
+    fun toBuild(): Build = Build(
+        number = number,
+        url = url,
+        result = result,
+        timestamp = timestamp,
+        duration = duration,
+        displayName = displayName,
+        building = building,
+        description = description,
+        estimatedDuration = estimatedDuration,
+        fullDisplayName = fullDisplayName
+    )
+}
+
+data class BuildAction(
+    val parameters: List<BuildParameter>? = null
+)
+
+data class BuildParameter(
+    val name: String,
+    val value: String? = null
+)
+
 enum class ParameterType {
     STRING,
     TEXT,

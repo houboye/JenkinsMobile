@@ -165,8 +165,9 @@ struct JobDetailView: View {
             )
         }
         .sheet(item: $selectedBuild) { build in
-            BuildLogView(
+            BuildDetailView(
                 jobName: job.name,
+                jobURL: job.url,
                 buildNumber: build.number,
                 buildURL: build.url
             )
